@@ -25,3 +25,23 @@ def test_deviation_logging(tmp_path):
     assert rows[0][0] == "wall_time"            # ヘッダ
     assert len(rows) - 1 == 2                    # 記録は 2 件（throttle 済み）
     assert rows[1][2] == "songA" and rows[1][3] == "120.0"
+
+
+def test_warmup_and_sustain(tmp_path):
+    path = tmp_path / "dev2.csv"
+    log = DeviationLogger(path, threshold_pct=0.10, interval_s=0.0,
+                          warmup_s=5.0, min_sustain_s=3.0)
+    # ウォームアップ中(<5s)は大きくズレても記録しない（戻り値は over=True）
+    assert log.record(1.0, 150.0, None, "L", "s", 120.0) is True
+    # 過渡ブレ: 6s に発生し 7s で解消 → 3s 継続していないので記録なし
+    log.record(6.0, 150.0, None, "L", "s", 120.0)
+    log.record(6.5, 120.0, None, "L", "s", 120.0)  # 解消（リセット）
+    # 持続ズレ: 10s から継続
+    log.record(10.0, 150.0, None, "L", "s", 120.0)  # 開始（まだ3s未満）
+    log.record(12.0, 150.0, None, "L", "s", 120.0)  # 2s 継続（未満）
+    log.record(13.5, 150.0, None, "L", "s", 120.0)  # 3.5s 継続 → 記録
+    log.close()
+    with open(path, encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    assert len(rows) - 1 == 1                    # 持続ズレの1件だけ
+    assert rows[1][1] == "13.50"

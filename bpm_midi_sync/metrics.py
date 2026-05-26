@@ -77,28 +77,44 @@ class DeviationLogger:
     """
 
     def __init__(self, path: str | Path, threshold_pct: float = 0.08,
-                 interval_s: float = 1.0):
+                 interval_s: float = 1.0, warmup_s: float = 0.0, min_sustain_s: float = 0.0):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.threshold = threshold_pct
         self.interval = interval_s
+        self.warmup_s = warmup_s
+        self.min_sustain_s = min_sustain_s
         self._f = self.path.open("w", newline="", encoding="utf-8")
         self._w = csv.writer(self._f)
         self._w.writerow(["wall_time", "t_s", "song", "expected_bpm",
                           "detected_bpm", "target_bpm", "dev_bpm", "dev_pct", "state"])
         self._f.flush()
         self._last_log_t = -1e9
+        self._dev_since: Optional[float] = None   # 連続ズレの開始時刻
         self.count = 0
 
     def record(self, t: float, detected: Optional[float], target: Optional[float],
                state: str, song: Optional[str], expected: Optional[float]) -> bool:
-        """ズレを判定し、閾値超なら（throttle して）記録。現在ズレ中かを返す。"""
+        """ズレを判定し、ウォームアップ後かつ min_sustain_s 継続したら（throttle して）記録。
+        戻り値は「現在ズレ中か」（GUI の⚠表示用、記録の有無とは独立）。"""
         if expected is None or detected is None or expected <= 0:
+            self._dev_since = None
             return False
         dev = detected - expected
         pct = abs(dev) / expected
         over = pct > self.threshold
-        if over and (t - self._last_log_t) >= self.interval:
+        # ウォームアップ中は記録もズレ継続カウントもしない（解析窓が未充填で不安定）
+        if t < self.warmup_s:
+            self._dev_since = None
+            return over
+        if not over:
+            self._dev_since = None
+            return False
+        # ここから over（ズレ中）。継続時間が min_sustain を超えたら記録
+        if self._dev_since is None:
+            self._dev_since = t
+        sustained = (t - self._dev_since) >= self.min_sustain_s
+        if (sustained and (t - self._last_log_t) >= self.interval):
             self._w.writerow([
                 datetime.now().isoformat(timespec="seconds"), f"{t:.2f}",
                 song or "", f"{expected:.1f}", f"{detected:.1f}",

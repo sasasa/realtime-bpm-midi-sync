@@ -60,7 +60,9 @@ class EngineRunner:
         self.song_name: Optional[str] = None
         self.log_path = Path("logs") / f"deviation_{datetime.now():%Y%m%d_%H%M%S}.csv"
         self._devlog = DeviationLogger(self.log_path, cfg.deviation_log_pct,
-                                       cfg.deviation_log_interval_s)
+                                       cfg.deviation_log_interval_s,
+                                       warmup_s=cfg.deviation_warmup_s,
+                                       min_sustain_s=cfg.deviation_min_sustain_s)
         if midi_port and midi_port != NO_MIDI:
             from .midi_clock import MidiClock
             self._midi = MidiClock(midi_port, bpm=cfg.prefer_bpm, ppqn=cfg.ppqn)

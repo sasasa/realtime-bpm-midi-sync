@@ -60,6 +60,8 @@ class Config:
     # --- ズレログ（期待テンポからの逸脱記録。GUI 用） ---
     deviation_log_pct: float = 0.08      # 検出が期待 BPM からこの割合超ズレたら記録（8%）
     deviation_log_interval_s: float = 1.0  # ズレ継続中の記録間隔（スパム防止）
+    deviation_warmup_s: float = 8.0      # 起動直後この秒数は記録しない（解析窓が未充填で不安定）
+    deviation_min_sustain_s: float = 3.0  # ズレがこの秒数continueして初めて記録（過渡ブレを無視）
 
     def save(self, path: str | Path) -> None:
         Path(path).write_text(
