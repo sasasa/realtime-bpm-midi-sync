@@ -61,6 +61,18 @@ pip install -e .[dev]             # テスト
 ./.venv/Scripts/python.exe -m bpm_midi_sync loopback --no-midi --expected-bpm 180
 ```
 
+## セットリスト GUI
+
+曲を選ぶと `expected-bpm`（テンポ prior）が切り替わり、その曲のテンポでロックし直す Tkinter GUI。
+
+```bash
+./.venv/Scripts/python.exe -m bpm_midi_sync gui
+```
+
+- 入力（ループバック / ライブ）と MIDI 出力ポートを画面で選択 →「開始」。
+- セットリストをクリックすると即 `expected-bpm` が切り替わる（曲ごとの正しいオクターブで追従）。
+- 曲目は `setlist.json`（`{name, bpm}` の配列）を編集して差し替え可能。
+
 ## 構成
 
 | モジュール | 役割 |
@@ -73,6 +85,7 @@ pip install -e .[dev]             # テスト
 | `midi_clock.py` | MIDI クロック送出スレッド（累積時刻・スピン待ち・Windows timeBeginPeriod） |
 | `engine.py` | 上記の配線（オーディオでもオフラインでも同一） |
 | `metrics.py` | 整定時間・追従誤差・定常ジッタの計測 |
+| `gui.py` | セットリスト型 GUI（曲選択で expected-bpm 切替） |
 | `eval/` | 合成信号・バッチ評価・パラメータ探索・閉ループ模擬・参照ビート生成 |
 
 ## テスト

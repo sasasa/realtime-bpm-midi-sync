@@ -1,0 +1,11 @@
+{
+  "_comment": "セットリスト。GUI(python -m bpm_midi_sync gui)で読み込む。曲を選ぶと expected-bpm が切り替わる。",
+  "songs": [
+    { "name": "インブルーム", "bpm": 79 },
+    { "name": "ブリード", "bpm": 159 },
+    { "name": "スクール", "bpm": 82 },
+    { "name": "リチウム", "bpm": 123 },
+    { "name": "ラウンジアクト", "bpm": 151 },
+    { "name": "スメルズライクティーンスピリット", "bpm": 117 }
+  ]
+}

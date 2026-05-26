@@ -188,6 +188,12 @@ def cmd_loopback(args) -> int:
     return _run_with_midi(cfg, source, use_midi=not args.no_midi, seed_bpm=args.seed)
 
 
+def cmd_gui(args) -> int:
+    from .gui import run_gui
+
+    return run_gui(args.setlist, _load_config(args))
+
+
 # --------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bpm-midi-sync", description=__doc__)
@@ -234,6 +240,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-midi", action="store_true")
     p.add_argument("--seed", type=float, help="初期 BPM")
     p.set_defaults(func=cmd_loopback)
+
+    p = sub.add_parser("gui", help="セットリスト型 GUI（曲選択で expected-bpm 切替）")
+    _add_common(p)
+    p.add_argument("--setlist", help="セットリスト JSON（既定: ./setlist.json）")
+    p.set_defaults(func=cmd_gui)
 
     return parser
 
