@@ -28,3 +28,12 @@ def test_autocorr_octave_resolved_by_prior(prefer, expected):
     eng = _run(cfg, y)
     assert eng.controller.target_bpm is not None
     assert abs(eng.controller.target_bpm - expected) < 4.0
+
+
+def test_lock_range_excludes_octave():
+    # 158 BPM 主体の信号でも、期待 79 ±35%[51-107] に拘束すれば 158 を排除して 79 に乗る
+    cfg = Config(detector="autocorr", prefer_bpm=79.0, tempo_lock_range_pct=0.35)
+    y = click_track(158.0, 14.0, cfg.samplerate, seed=3)
+    eng = _run(cfg, y)
+    assert eng.controller.target_bpm is not None
+    assert abs(eng.controller.target_bpm - 79.0) < 4.0

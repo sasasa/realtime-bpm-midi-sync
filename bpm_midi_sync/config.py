@@ -29,6 +29,8 @@ class Config:
     # autocorr 検出
     prefer_bpm: float = 120.0    # テンポ prior の中心（オクターブ曖昧性の解消。seed/現テンポで上書き）
     prior_sigma: float = 0.9     # prior の広がり（log2 単位。小さいほど prefer_bpm に強く拘束）
+    tempo_lock_range_pct: float = 0.0  # >0 で検出を prefer_bpm±この割合に拘束（期待値が信頼できる時）。
+                                       # 2倍/半分のオクターブ跳びを排除。GUI/expected-bpm で 0.35 に。
     tempo_window_s: float = 8.0  # 自己相関の解析窓長
     tempo_update_s: float = 0.25 # テンポ再推定の間隔
 

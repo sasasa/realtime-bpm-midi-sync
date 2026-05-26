@@ -95,13 +95,25 @@ class AutocorrTempoDetector(BeatDetector):
         self._since_update += 1
         if self._since_update >= self._update_frames:
             self._since_update = 0
+            lo, hi = self._search_range()
             bpm = autocorr_tempo(
                 np.fromiter(self._env, dtype=np.float64), self._sr_env,
-                self.cfg.min_bpm, self.cfg.max_bpm, self._prefer, self.cfg.prior_sigma,
+                lo, hi, self._prefer, self.cfg.prior_sigma,
             )
             if bpm is not None:
                 self._bpm = bpm
         return []
+
+    def _search_range(self) -> tuple:
+        """期待値が信頼できる時（tempo_lock_range_pct>0）は prefer±range に拘束し、
+        2倍/半分のオクターブ跳びを物理的に排除する。"""
+        r = self.cfg.tempo_lock_range_pct
+        if r > 0:
+            lo = max(self.cfg.min_bpm, self._prefer * (1 - r))
+            hi = min(self.cfg.max_bpm, self._prefer * (1 + r))
+            if lo < hi:
+                return lo, hi
+        return self.cfg.min_bpm, self.cfg.max_bpm
 
 
 class NumpyBeatDetector(BeatDetector):

@@ -233,6 +233,10 @@ class App:
 
 
 def run_gui(setlist_path: Optional[str], cfg: Config) -> int:
+    # セットリストの BPM は信頼できる期待値なので、検出を ±35% に拘束して
+    # オクターブ跳びを排除（ズレログが本物の減速だけを拾うようにする）
+    if cfg.tempo_lock_range_pct == 0.0:
+        cfg = cfg.replace(tempo_lock_range_pct=0.35)
     songs = load_setlist(setlist_path)
     root = tk.Tk()
     App(root, songs, cfg)

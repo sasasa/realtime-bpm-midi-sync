@@ -33,15 +33,21 @@ def _add_common(p: argparse.ArgumentParser) -> None:
                    help="MIDI 出力ポート名（部分一致。list-midi 参照）")
     p.add_argument("--expected-bpm", type=float, dest="prefer_bpm",
                    help="期待テンポ（autocorr のオクターブ prior 中心。概テンポが分かる時に指定）")
+    p.add_argument("--lock-range", type=float, dest="tempo_lock_range_pct",
+                   help="検出を期待テンポ±この割合に拘束（例 0.35）。オクターブ跳びを排除")
 
 
 def _load_config(args) -> Config:
     cfg = Config.load(args.config) if getattr(args, "config", None) else Config()
     for key in ("detector", "estimator", "samplerate", "hop_size",
-                "input_device", "midi_port", "prefer_bpm"):
+                "input_device", "midi_port", "prefer_bpm", "tempo_lock_range_pct"):
         val = getattr(args, key, None)
         if val is not None:
             cfg = cfg.replace(**{key: val})
+    # 期待テンポ(expected/seed)を与えたら既定で±35%拘束（オクターブ安定）
+    seedish = getattr(args, "prefer_bpm", None) or getattr(args, "seed", None)
+    if seedish is not None and cfg.tempo_lock_range_pct == 0.0:
+        cfg = cfg.replace(tempo_lock_range_pct=0.35)
     return cfg
 
 
