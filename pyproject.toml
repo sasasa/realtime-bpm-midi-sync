@@ -11,6 +11,7 @@ dependencies = ["numpy>=1.23"]
 
 [project.optional-dependencies]
 audio = ["sounddevice>=0.4.6", "soundfile>=0.12"]
+loopback = ["soundcard>=0.4.3"]
 midi = ["mido>=1.3", "python-rtmidi>=1.5"]
 detect = ["aubio>=0.4.9"]
 eval = ["librosa>=0.10", "yt-dlp"]

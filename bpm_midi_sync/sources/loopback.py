@@ -1,69 +1,74 @@
 """システム音声ループバック入力（plan §12-1）。
 
-ブラウザで再生した YouTube 等の音をそのまま入力に回す。ダウンロード不要。
-Windows は WASAPI loopback（sounddevice の extra_settings）を使う。VB-CABLE /
-VoiceMeeter を入れている場合はそのデバイスを LiveSource で選んでもよい。
+ブラウザで再生した YouTube 等の音をそのまま入力に回す（ダウンロード不要）。
+
+実装メモ: python-sounddevice が同梱する PortAudio は WASAPI loopback を持たない
+（`WasapiSettings(loopback=...)` が無い）。そこで **soundcard** ライブラリの
+ネイティブ WASAPI loopback を使う。これなら VB-CABLE 等の仮想ケーブル不要。
+soundcard が無い場合は VB-CABLE/VoiceMeeter を LiveSource で指定する方法を案内する。
+
+キャプチャは専用スレッドで途切れなく record() し続け、解析側はキューから取り出す
+（処理の合間に録音が途切れる "data discontinuity" を避ける）。
 """
 
 from __future__ import annotations
 
+import queue
+import threading
+import warnings
 from typing import Iterator, Optional
 
 import numpy as np
 
 from .base import AudioSource
-from .live import LiveSource
 
 
 class LoopbackSource(AudioSource):
-    def __init__(self, samplerate: int, hop_size: int, device: Optional[int] = None,
-                 channels: int = 2):
+    def __init__(self, samplerate: int, hop_size: int, speaker_name: Optional[str] = None):
         try:
-            import sounddevice as sd
+            import soundcard as sc
         except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("LoopbackSource には sounddevice が必要です") from exc
+            raise RuntimeError(
+                "ループバックには soundcard が必要です: pip install soundcard\n"
+                "（代替: VB-CABLE/VoiceMeeter を入れ、その入力を `run` で使う）"
+            ) from exc
 
-        self._sd = sd
+        self._sc = sc
         self.samplerate = samplerate
         self.hop_size = hop_size
-        self.channels = channels
-        # WASAPI loopback: 既定の出力デバイスを録音対象にする
-        try:
-            wasapi = sd.WasapiSettings(loopback=True)
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                "WASAPI loopback を使えません。VB-CABLE/VoiceMeeter を LiveSource で指定してください"
-            ) from exc
-        self._inner = LiveSource(samplerate, hop_size, device=device, channels=channels)
-        self._inner_extra = wasapi
+        self.speaker_name = speaker_name
+        self._stop = False
 
     def stop(self) -> None:
-        self._inner.stop()
+        self._stop = True
 
     def frames(self) -> Iterator[np.ndarray]:
-        # LiveSource の InputStream に extra_settings を渡すため簡易に再実装
-        sd = self._sd
-        import queue
+        sc = self._sc
+        spk = sc.get_speaker(self.speaker_name) if self.speaker_name else sc.default_speaker()
+        if spk is None:
+            raise RuntimeError(f"スピーカー '{self.speaker_name}' が見つかりません")
+        mic = sc.get_microphone(spk.name, include_loopback=True)
 
-        q: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=64)
+        q: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=256)
 
-        def cb(indata, frames, time_info, status):  # noqa: ANN001
-            mono = indata.mean(axis=1) if indata.ndim == 2 else indata
+        def capture() -> None:
+            with warnings.catch_warnings():
+                # 途切れ警告は想定内（解析が一時的に遅れた合図）。ノイズなので抑制
+                warnings.simplefilter("ignore")
+                with mic.recorder(samplerate=self.samplerate, channels=1,
+                                  blocksize=self.hop_size) as rec:
+                    while not self._stop:
+                        data = rec.record(numframes=self.hop_size)
+                        frame = data.mean(axis=1) if data.ndim == 2 else data
+                        try:
+                            q.put_nowait(np.asarray(frame, dtype=np.float32))
+                        except queue.Full:
+                            pass  # 解析が遅れている。最新を優先して落とす
+
+        th = threading.Thread(target=capture, daemon=True)
+        th.start()
+        while not self._stop:
             try:
-                q.put_nowait(mono.copy())
-            except queue.Full:
-                pass
-
-        buf = np.zeros(0, dtype=np.float32)
-        with sd.InputStream(samplerate=self.samplerate, channels=self.channels,
-                            blocksize=self.hop_size, dtype="float32",
-                            extra_settings=self._inner_extra, callback=cb):
-            while True:
-                try:
-                    block = q.get(timeout=0.5)
-                except queue.Empty:
-                    continue
-                buf = np.concatenate([buf, block])
-                while len(buf) >= self.hop_size:
-                    yield buf[: self.hop_size]
-                    buf = buf[self.hop_size :]
+                yield q.get(timeout=0.5)
+            except queue.Empty:
+                continue

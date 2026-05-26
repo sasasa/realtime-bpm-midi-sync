@@ -25,7 +25,7 @@
       "id": "EXAMPLE-drum-only",
       "type": "youtube",
       "tier": 1,
-      "url": "https://www.youtube.com/watch?v=REPLACE_ME",
+      "url": "https://www.youtube.com/shorts/9x66VrjBSPk",
       "bpm": null,
       "license": "unknown",
       "note": "ドラム主体トラック例。実際のURL/既知BPMを各自記入。ToS考慮しローカル検証限定、可能ならループバック取込（DL不要）"
@@ -34,7 +34,7 @@
       "id": "EXAMPLE-fullmix-steady",
       "type": "youtube",
       "tier": 2,
-      "url": "https://www.youtube.com/watch?v=REPLACE_ME",
+      "url": "https://www.youtube.com/watch?v=zucJHYwi2Uc",
       "bpm": null,
       "license": "unknown",
       "note": "定常ビートのフルミックス例。ロバスト性確認用"

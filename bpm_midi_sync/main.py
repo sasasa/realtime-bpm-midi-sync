@@ -130,9 +130,22 @@ def _run_with_midi(cfg: Config, source, use_midi: bool, seed_bpm: Optional[float
         midi.start()
         print(f"MIDI クロック送出中: ポート='{midi.port_name}'")
 
+    # 4Hz に間引いて現在値を1行更新表示
+    last = {"q": -1}
+
+    def status(t, detected, target, state):
+        q = int(t * 4)
+        if q == last["q"]:
+            return
+        last["q"] = q
+        d = f"{detected:6.1f}" if detected is not None else "  --  "
+        tg = f"{target:6.1f}" if target is not None else "  --  "
+        sys.stdout.write(f"\r[{state:9}] t={t:6.1f}s  検出={d}  送出={tg} BPM   ")
+        sys.stdout.flush()
+
     print("Ctrl-C で停止")
     try:
-        engine.run(source)
+        engine.run(source, status_cb=status)
     except KeyboardInterrupt:
         print("\n停止します")
     finally:

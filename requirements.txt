@@ -1,9 +1,12 @@
 # コア（検出・推定・制御の最小実行に必須）
 numpy>=1.23
 
-# 音声入出力（live/loopback、ファイル読み込み）
+# 音声入出力（live、ファイル読み込み）
 sounddevice>=0.4.6
 soundfile>=0.12
+
+# ループバック入力（システム音声=YouTube等を取り込み。WASAPI loopback ネイティブ対応）
+soundcard>=0.4.3
 
 # MIDI 送出
 mido>=1.3

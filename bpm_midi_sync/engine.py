@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 from .beat_detector import make_detector
 from .config import Config
@@ -32,21 +32,24 @@ class Engine:
     def seed_tempo(self, bpm: float) -> None:
         self.controller.seed(bpm)
 
-    def run(self, source: AudioSource) -> MetricsLog:
-        """source を消費し終えるまで回す（file/batch は自然に終了）。"""
+    def run(self, source: AudioSource,
+            status_cb: Optional[Callable[[float, Optional[float], Optional[float], str], None]] = None
+            ) -> MetricsLog:
+        """source を消費し終えるまで回す（file/batch は自然に終了）。
+
+        status_cb があればフレーム毎に (時刻, 検出BPM, 目標BPM, 状態) を渡す
+        （live/loopback の現在値表示用）。
+        """
         dt = self.cfg.hop_size / self.cfg.samplerate
         for frame in source.frames():
-            t = self.detector.time
             for beat_t in self.detector.process(frame):
                 bpm = self.estimator.on_beat(beat_t)
                 self.controller.on_beat(beat_t, bpm)
-            target = self.controller.tick(self.detector.time, dt)
+            t = self.detector.time
+            target = self.controller.tick(t, dt)
             if self.midi is not None:
                 self.midi.set_bpm(target)
-            self.metrics.log(
-                self.detector.time,
-                self.estimator.bpm_out,
-                target,
-                self.controller.state.value,
-            )
+            self.metrics.log(t, self.estimator.bpm_out, target, self.controller.state.value)
+            if status_cb is not None:
+                status_cb(t, self.estimator.bpm_out, target, self.controller.state.value)
         return self.metrics
