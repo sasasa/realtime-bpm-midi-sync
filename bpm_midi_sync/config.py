@@ -75,3 +75,19 @@ class Config:
 
     def replace(self, **kwargs) -> "Config":
         return dataclasses.replace(self, **kwargs)
+
+    def for_trusted_expected(self) -> "Config":
+        """期待テンポ（setlist / --expected-bpm / --seed）を信頼できる時のプロファイル。
+
+        実音源検証（In Bloom 等）の結果、オクターブ/近傍ピーク誤りには
+        「強い prior(σ) + 長い解析窓」が最も効く（範囲拘束だけだと逆に帯域内の
+        偽ピークを拾う）。送出はクランプで暴走防止。明示的に変更済みの項目は尊重。
+        """
+        d = Config()
+        return dataclasses.replace(
+            self,
+            prior_sigma=self.prior_sigma if self.prior_sigma != d.prior_sigma else 0.35,
+            tempo_window_s=self.tempo_window_s if self.tempo_window_s != d.tempo_window_s else 14.0,
+            tempo_lock_range_pct=self.tempo_lock_range_pct if self.tempo_lock_range_pct != d.tempo_lock_range_pct else 0.25,
+            target_max_drift_pct=self.target_max_drift_pct if self.target_max_drift_pct != d.target_max_drift_pct else 0.15,
+        )

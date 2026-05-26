@@ -244,12 +244,9 @@ class App:
 
 
 def run_gui(setlist_path: Optional[str], cfg: Config) -> int:
-    # セットリストの BPM は信頼できる期待値。検出を ±25% に拘束（オクターブ＋
-    # 近傍の競合ピーク=例 79 に対する 100 を排除）し、送出は期待値±15% に固定して暴走防止。
-    if cfg.tempo_lock_range_pct == 0.0:
-        cfg = cfg.replace(tempo_lock_range_pct=0.25)
-    if cfg.target_max_drift_pct == 0.0:
-        cfg = cfg.replace(target_max_drift_pct=0.15)
+    # セットリストの BPM は信頼できる期待値 → 強prior+長窓+範囲拘束+送出クランプの
+    # プロファイルを適用（オクターブ/近傍ピーク誤りを抑え、ズレログを本物の減速だけに）
+    cfg = cfg.for_trusted_expected()
     songs = load_setlist(setlist_path)
     root = tk.Tk()
     App(root, songs, cfg)

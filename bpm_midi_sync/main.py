@@ -44,10 +44,10 @@ def _load_config(args) -> Config:
         val = getattr(args, key, None)
         if val is not None:
             cfg = cfg.replace(**{key: val})
-    # 期待テンポ(expected/seed)を与えたら既定で±35%拘束（オクターブ安定）
+    # 期待テンポ(expected/seed)を与えたら「信頼できる期待値」プロファイルを適用
     seedish = getattr(args, "prefer_bpm", None) or getattr(args, "seed", None)
-    if seedish is not None and cfg.tempo_lock_range_pct == 0.0:
-        cfg = cfg.replace(tempo_lock_range_pct=0.35)
+    if seedish is not None:
+        cfg = cfg.for_trusted_expected()
     return cfg
 
 
