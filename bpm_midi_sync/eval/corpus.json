@@ -1,0 +1,43 @@
+{
+  "_comment": "検証音源マニフェスト（plan §12-2）。音声ファイルはコピーライト/容量のためコミットしない。URL+既知BPM+tier+ライセンスのみ。tier1=ドラム主体(本番に最も近い・主役), tier2=フルミックス定常ビート, tier3=テンポ可変/ライブ。synthetic=合成クリック(同梱・正解自明)。",
+  "entries": [
+    {
+      "id": "synth-120",
+      "type": "synthetic",
+      "tier": 0,
+      "bpm": 120.0,
+      "duration_s": 20.0,
+      "license": "generated",
+      "note": "eval.synth.click_track で生成。CI/自己テスト用"
+    },
+    {
+      "id": "synth-90-step-100",
+      "type": "synthetic",
+      "tier": 0,
+      "bpm_start": 90.0,
+      "bpm_end": 100.0,
+      "step_at_s": 10.0,
+      "duration_s": 20.0,
+      "license": "generated",
+      "note": "ステップ応答（整定時間）検証用"
+    },
+    {
+      "id": "EXAMPLE-drum-only",
+      "type": "youtube",
+      "tier": 1,
+      "url": "https://www.youtube.com/watch?v=REPLACE_ME",
+      "bpm": null,
+      "license": "unknown",
+      "note": "ドラム主体トラック例。実際のURL/既知BPMを各自記入。ToS考慮しローカル検証限定、可能ならループバック取込（DL不要）"
+    },
+    {
+      "id": "EXAMPLE-fullmix-steady",
+      "type": "youtube",
+      "tier": 2,
+      "url": "https://www.youtube.com/watch?v=REPLACE_ME",
+      "bpm": null,
+      "license": "unknown",
+      "note": "定常ビートのフルミックス例。ロバスト性確認用"
+    }
+  ]
+}

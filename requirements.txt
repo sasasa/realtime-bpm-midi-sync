@@ -1,0 +1,18 @@
+# コア（検出・推定・制御の最小実行に必須）
+numpy>=1.23
+
+# 音声入出力（live/loopback、ファイル読み込み）
+sounddevice>=0.4.6
+soundfile>=0.12
+
+# MIDI 送出
+mido>=1.3
+python-rtmidi>=1.5
+
+# リアルタイム拍検出（任意・入らなければ numpy 検出にフォールバック）
+# aubio は新しめ Python で wheel が無いことがある。Python 3.10 推奨（plan §14）
+aubio>=0.4.9 ; python_version < "3.11"
+
+# 検証（任意）: YouTube 取得・参照ビート生成
+# yt-dlp
+# librosa
