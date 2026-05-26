@@ -54,6 +54,10 @@ class Config:
     ppqn: int = 24
     initial_bpm: float = 120.0   # タップ/手入力の初期 BPM（ACQUIRING の保険）
 
+    # --- ズレログ（期待テンポからの逸脱記録。GUI 用） ---
+    deviation_log_pct: float = 0.08      # 検出が期待 BPM からこの割合超ズレたら記録（8%）
+    deviation_log_interval_s: float = 1.0  # ズレ継続中の記録間隔（スパム防止）
+
     def save(self, path: str | Path) -> None:
         Path(path).write_text(
             json.dumps(dataclasses.asdict(self), indent=2, ensure_ascii=False),

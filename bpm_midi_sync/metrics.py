@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import statistics
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -66,3 +67,51 @@ class MetricsLog:
             w.writerow(["time_s", "detected_bpm", "target_bpm", "state"])
             for row in self.rows:
                 w.writerow(row)
+
+
+class DeviationLogger:
+    """検出 BPM が期待テンポから閾値超ズレた事象を CSV に記録（あとで分析用）。
+
+    曲調チェンジでテンポが落ちた等を後から追えるよう、ズレ継続中は interval ごとに
+    1 行だけ記録する（スパム防止）。期待値が未設定/検出 None のときは何もしない。
+    """
+
+    def __init__(self, path: str | Path, threshold_pct: float = 0.08,
+                 interval_s: float = 1.0):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.threshold = threshold_pct
+        self.interval = interval_s
+        self._f = self.path.open("w", newline="", encoding="utf-8")
+        self._w = csv.writer(self._f)
+        self._w.writerow(["wall_time", "t_s", "song", "expected_bpm",
+                          "detected_bpm", "target_bpm", "dev_bpm", "dev_pct", "state"])
+        self._f.flush()
+        self._last_log_t = -1e9
+        self.count = 0
+
+    def record(self, t: float, detected: Optional[float], target: Optional[float],
+               state: str, song: Optional[str], expected: Optional[float]) -> bool:
+        """ズレを判定し、閾値超なら（throttle して）記録。現在ズレ中かを返す。"""
+        if expected is None or detected is None or expected <= 0:
+            return False
+        dev = detected - expected
+        pct = abs(dev) / expected
+        over = pct > self.threshold
+        if over and (t - self._last_log_t) >= self.interval:
+            self._w.writerow([
+                datetime.now().isoformat(timespec="seconds"), f"{t:.2f}",
+                song or "", f"{expected:.1f}", f"{detected:.1f}",
+                f"{target:.1f}" if target else "", f"{dev:+.1f}",
+                f"{pct * 100:.1f}", state,
+            ])
+            self._f.flush()
+            self._last_log_t = t
+            self.count += 1
+        return over
+
+    def close(self) -> None:
+        try:
+            self._f.close()
+        except Exception:  # noqa: BLE001
+            pass

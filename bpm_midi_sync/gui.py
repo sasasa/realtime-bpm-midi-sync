@@ -12,12 +12,14 @@ import json
 import queue
 import threading
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import ttk
 from typing import List, Optional
 
 from .config import Config
 from .engine import Engine
+from .metrics import DeviationLogger
 
 NO_MIDI = "（MIDIなし）"
 DEFAULT_SONGS = [
@@ -51,6 +53,11 @@ class EngineRunner:
         self._source = self._make_source(source_kind)
         self._midi = None
         self._thread: Optional[threading.Thread] = None
+        self.expected_bpm: Optional[float] = None
+        self.song_name: Optional[str] = None
+        self.log_path = Path("logs") / f"deviation_{datetime.now():%Y%m%d_%H%M%S}.csv"
+        self._devlog = DeviationLogger(self.log_path, cfg.deviation_log_pct,
+                                       cfg.deviation_log_interval_s)
         if midi_port and midi_port != NO_MIDI:
             from .midi_clock import MidiClock
             self._midi = MidiClock(midi_port, bpm=cfg.prefer_bpm, ppqn=cfg.ppqn)
@@ -64,7 +71,9 @@ class EngineRunner:
         from .sources.loopback import LoopbackSource
         return LoopbackSource(self.cfg.samplerate, self.cfg.hop_size)
 
-    def set_expected_bpm(self, bpm: float) -> None:
+    def set_expected_bpm(self, bpm: float, name: Optional[str] = None) -> None:
+        self.expected_bpm = bpm
+        self.song_name = name
         self.engine.seed_tempo(bpm)  # prior 更新 + その BPM で再ロック
         if self._midi is not None:
             self._midi.set_bpm(bpm)
@@ -75,11 +84,15 @@ class EngineRunner:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
+    def _status(self, t, d, tg, st) -> None:
+        deviating = self._devlog.record(t, d, tg, st, self.song_name, self.expected_bpm)
+        self.q.put((t, d, tg, st, deviating))
+
     def _run(self) -> None:
         try:
-            self.engine.run(self._source, status_cb=lambda t, d, tg, st: self.q.put((t, d, tg, st)))
+            self.engine.run(self._source, status_cb=self._status)
         except Exception as exc:  # noqa: BLE001
-            self.q.put(("error", str(exc), None, "ERROR"))
+            self.q.put(("error", str(exc), None, "ERROR", False))
 
     def stop(self) -> None:
         try:
@@ -88,6 +101,7 @@ class EngineRunner:
             pass
         if self._midi is not None:
             self._midi.stop()
+        self._devlog.close()
 
 
 class App:
@@ -130,6 +144,10 @@ class App:
         self.detail_lbl.pack(anchor="w")
         self.song_lbl = ttk.Label(mid, text="曲: 未選択", font=("", 12, "bold"), foreground="#1565c0")
         self.song_lbl.pack(anchor="w", pady=4)
+        self.dev_lbl = ttk.Label(mid, text="", font=("", 11, "bold"), foreground="#c62828")
+        self.dev_lbl.pack(anchor="w")
+        self.log_lbl = ttk.Label(mid, text="", font=("", 9), foreground="#666")
+        self.log_lbl.pack(anchor="w")
 
         # セットリスト
         body = ttk.Frame(self.root, padding=8)
@@ -165,10 +183,12 @@ class App:
             return
         self.btn.config(text="停止")
         self.state_lbl.config(text="起動中…", foreground="black")
+        self.log_lbl.config(text=f"ズレログ: {self.runner.log_path}")
         # 既に選択済みの曲があれば prior を適用
         sel = self.listbox.curselection()
         if sel:
-            self.runner.set_expected_bpm(float(self.songs[sel[0]]["bpm"]))
+            s = self.songs[sel[0]]
+            self.runner.set_expected_bpm(float(s["bpm"]), s["name"])
 
     def _stop(self) -> None:
         if self.runner:
@@ -185,7 +205,7 @@ class App:
         song = self.songs[sel[0]]
         self.song_lbl.config(text=f"曲: {song['name']}（expected {song['bpm']} BPM）")
         if self.runner:
-            self.runner.set_expected_bpm(float(song["bpm"]))
+            self.runner.set_expected_bpm(float(song["bpm"]), song["name"])
 
     def _poll(self) -> None:
         last = None
@@ -195,7 +215,7 @@ class App:
         except queue.Empty:
             pass
         if last is not None:
-            t, d, tg, st = last
+            t, d, tg, st, deviating = last
             if st == "ERROR":
                 self.state_lbl.config(text=f"エラー: {d}", foreground="red")
             else:
@@ -204,6 +224,11 @@ class App:
                 ds = f"{d:.1f}" if d else "--"
                 ts = f"{tg:.1f}" if tg else "--"
                 self.detail_lbl.config(text=f"検出 {ds} / 送出 {ts}")
+                if deviating and self.runner and self.runner.expected_bpm:
+                    diff = (d or 0) - self.runner.expected_bpm
+                    self.dev_lbl.config(text=f"⚠ 期待値から {diff:+.0f} BPM ズレ（記録中）")
+                else:
+                    self.dev_lbl.config(text="")
         self.root.after(100, self._poll)
 
 
