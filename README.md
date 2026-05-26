@@ -29,29 +29,32 @@ pip install -e .[dev]             # テスト
 
 ## 使い方
 
+依存は venv にのみ入れているので、**venv の python を使う**（`.\.venv\Scripts\python.exe`）。
+`.\.venv\Scripts\Activate.ps1` で venv を有効化すれば、以降は単に `python -m bpm_midi_sync ...` でも可。
+
 ```powershell
 # 実機不要の検証（合成クリックで検出〜追従を確認）
-python -m bpm_midi_sync selftest --bpm 128 --jitter 5
+.\.venv\Scripts\python.exe -m bpm_midi_sync selftest --bpm 128 --jitter 5
 
 # 閉ループ安定性シミュレーション（反応するドラマー模擬。実機不要）
-python -m bpm_midi_sync simulate --bpm 120 --gain 0.3 --latency 0.15
+.\.venv\Scripts\python.exe -m bpm_midi_sync simulate --bpm 120 --gain 0.3 --latency 0.15
 
 # パラメータ自動探索（=「学習」）
-python -m bpm_midi_sync sweep
+.\.venv\Scripts\python.exe -m bpm_midi_sync sweep
 
 # 音源ファイルを検出（--midi で実際にクロック送出、--realtime で実時間ペース）
-python -m bpm_midi_sync file path/to/drums.wav --realtime --midi --seed 120
+.\.venv\Scripts\python.exe -m bpm_midi_sync file path/to/drums.wav --realtime --midi --seed 120
 
 # デバイス/ポート確認
-python -m bpm_midi_sync list-devices
-python -m bpm_midi_sync list-midi
+.\.venv\Scripts\python.exe -m bpm_midi_sync list-devices
+.\.venv\Scripts\python.exe -m bpm_midi_sync list-midi
 
 # ライブ入力 → MIDI クロック（実機）。--device は list-devices、--midi-port は list-midi 参照
-python -m bpm_midi_sync run --device 15 --midi-port loopMIDI --seed 120
+.\.venv\Scripts\python.exe -m bpm_midi_sync run --device 15 --midi-port loopMIDI --seed 120
 
 # ブラウザ等のシステム音声をループバック入力（YouTube 検証。DL 不要）
-python -m bpm_midi_sync loopback --midi-port loopMIDI
-python -m bpm_midi_sync loopback --no-midi          # 検出だけ見る
+.\.venv\Scripts\python.exe -m bpm_midi_sync loopback --midi-port loopMIDI
+.\.venv\Scripts\python.exe -m bpm_midi_sync loopback --no-midi          # 検出だけ見る
 ```
 
 ## 構成
