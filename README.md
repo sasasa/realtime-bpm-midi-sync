@@ -46,11 +46,12 @@ python -m bpm_midi_sync file path/to/drums.wav --realtime --midi --seed 120
 python -m bpm_midi_sync list-devices
 python -m bpm_midi_sync list-midi
 
-# ライブ入力 → MIDI クロック（実機）
-python -m bpm_midi_sync run --seed 120
+# ライブ入力 → MIDI クロック（実機）。--device は list-devices、--midi-port は list-midi 参照
+python -m bpm_midi_sync run --device 15 --midi-port loopMIDI --seed 120
 
 # ブラウザ等のシステム音声をループバック入力（YouTube 検証。DL 不要）
-python -m bpm_midi_sync loopback
+python -m bpm_midi_sync loopback --midi-port loopMIDI
+python -m bpm_midi_sync loopback --no-midi          # 検出だけ見る
 ```
 
 ## 構成

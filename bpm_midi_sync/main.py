@@ -27,11 +27,16 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--estimator", choices=["pll", "median"])
     p.add_argument("--samplerate", type=int)
     p.add_argument("--hop", type=int, dest="hop_size")
+    p.add_argument("--device", type=int, dest="input_device",
+                   help="入力デバイス番号（list-devices 参照）")
+    p.add_argument("--midi-port", dest="midi_port",
+                   help="MIDI 出力ポート名（部分一致。list-midi 参照）")
 
 
 def _load_config(args) -> Config:
     cfg = Config.load(args.config) if getattr(args, "config", None) else Config()
-    for key in ("detector", "estimator", "samplerate", "hop_size"):
+    for key in ("detector", "estimator", "samplerate", "hop_size",
+                "input_device", "midi_port"):
         val = getattr(args, key, None)
         if val is not None:
             cfg = cfg.replace(**{key: val})
