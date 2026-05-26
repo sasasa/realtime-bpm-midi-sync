@@ -31,6 +31,7 @@ class Engine:
 
     def seed_tempo(self, bpm: float) -> None:
         self.controller.seed(bpm)
+        self.detector.set_prior(bpm)   # seed はオクターブ prior も兼ねる
 
     def run(self, source: AudioSource,
             status_cb: Optional[Callable[[float, Optional[float], Optional[float], str], None]] = None
@@ -41,15 +42,21 @@ class Engine:
         （live/loopback の現在値表示用）。
         """
         dt = self.cfg.hop_size / self.cfg.samplerate
+        # prior は config.prefer_bpm（= expected-bpm / seed）を一貫して使う。
+        # target で上書きすると初期の誤ロックを自己強化するため行わない。
         for frame in source.frames():
             for beat_t in self.detector.process(frame):
                 bpm = self.estimator.on_beat(beat_t)
                 self.controller.on_beat(beat_t, bpm)
+            cur = self.detector.current_bpm
+            if cur is not None:                       # テンポストリーム型（autocorr）
+                self.controller.on_tempo(self.detector.time, cur)
             t = self.detector.time
             target = self.controller.tick(t, dt)
             if self.midi is not None:
                 self.midi.set_bpm(target)
-            self.metrics.log(t, self.estimator.bpm_out, target, self.controller.state.value)
+            detected = cur if cur is not None else self.estimator.bpm_out
+            self.metrics.log(t, detected, target, self.controller.state.value)
             if status_cb is not None:
-                status_cb(t, self.estimator.bpm_out, target, self.controller.state.value)
+                status_cb(t, detected, target, self.controller.state.value)
         return self.metrics

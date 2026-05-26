@@ -23,9 +23,14 @@ class Config:
     input_device: Optional[int] = None   # sounddevice デバイス番号（None=既定）
 
     # --- 検出（beat_detector） ---
-    detector: str = "numpy"      # "numpy" | "aubio"
+    detector: str = "autocorr"   # "autocorr"(推奨) | "numpy"(onset/IBI) | "aubio"
     onset_sensitivity: float = 1.0   # numpy 検出のオンセット閾値感度（median + k*std）
     min_onset_interval_s: float = 0.06  # 連続オンセットの最小間隔（ゴースト除去）
+    # autocorr 検出
+    prefer_bpm: float = 120.0    # テンポ prior の中心（オクターブ曖昧性の解消。seed/現テンポで上書き）
+    prior_sigma: float = 0.9     # prior の広がり（log2 単位。小さいほど prefer_bpm に強く拘束）
+    tempo_window_s: float = 8.0  # 自己相関の解析窓長
+    tempo_update_s: float = 0.25 # テンポ再推定の間隔
 
     # --- テンポ推定（tempo_estimator） ---
     estimator: str = "pll"       # "pll" | "median"

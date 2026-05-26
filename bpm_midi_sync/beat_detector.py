@@ -1,14 +1,19 @@
-"""ビート検出（plan §6）。
+"""ビート/テンポ検出（plan §6）。
 
-共通インタフェース ``process(frame) -> list[float]``:
-hop サイズのモノ float32 フレームを受け取り、そのフレーム内で検出したビート
-（オンセット）時刻のリスト [秒] を返す。時刻は **累積サンプル数 / sr** で持つ
-（壁時計でなくサンプル基準。plan §6）。
+3 バックエンド:
+- AutocorrTempoDetector（既定・推奨）: オンセット強度包絡の自己相関でテンポを直接推定。
+  テンポ prior（期待 BPM）でオクターブ曖昧性を解消。フルミックスの実音源で最も頑健
+  （territorial pissings 等の検証で IBI 方式の破綻を確認したため既定にした）。
+  ビートイベントでなく **テンポ(BPM)ストリーム** を出す（`current_bpm`）。
+- NumpyBeatDetector: スペクトルフラックスのオンセット検出 → ビートイベント。
+  クリーンなクリック/単純なリズム向け。aubio が無くても動く。
+- AubioBeatDetector: aubio.tempo によるビートトラッキング。
 
-2 バックエンド:
-- NumpyBeatDetector: スペクトルフラックスのオンセット検出（依存 numpy のみ）。
-  クリック/ドラム主体に対して堅牢で、aubio が入らない環境でも動く。
-- AubioBeatDetector: aubio.tempo によるビートトラッキング（インストールできれば）。
+共通インタフェース:
+- ``process(frame) -> list[float]``: フレーム内で検出したビート時刻[秒]（テンポ
+  ストリーム型は []）。時刻は累積サンプル数 / sr。
+- ``current_bpm``: テンポストリーム型の現在 BPM（イベント型は None）。
+- ``set_prior(bpm)``: テンポ prior を更新（controller の現在テンポを供給）。
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from typing import List, Optional
 import numpy as np
 
 from .config import Config
+from .tempogram import autocorr_tempo, spectral_flux
 
 
 class BeatDetector:
@@ -29,12 +35,29 @@ class BeatDetector:
 
     @property
     def time(self) -> float:
-        """これまでに処理した音声の終端時刻 [秒]。"""
         raise NotImplementedError
 
+    @property
+    def current_bpm(self) -> Optional[float]:
+        return None
 
-class NumpyBeatDetector(BeatDetector):
-    """スペクトルフラックス + 適応閾値のオンセット検出。"""
+    def set_prior(self, bpm: Optional[float]) -> None:
+        pass
+
+
+def _fit_hop(frame: np.ndarray, hop: int) -> np.ndarray:
+    frame = np.asarray(frame, dtype=np.float32)
+    if frame.ndim == 2:
+        frame = frame.mean(axis=1)
+    if len(frame) < hop:
+        frame = np.pad(frame, (0, hop - len(frame)))
+    elif len(frame) > hop:
+        frame = frame[:hop]
+    return frame
+
+
+class AutocorrTempoDetector(BeatDetector):
+    """オンセット包絡の自己相関 + テンポ prior（既定）。"""
 
     def __init__(self, config: Config):
         self.cfg = config
@@ -43,40 +66,76 @@ class NumpyBeatDetector(BeatDetector):
         self._n_samples = 0
         self._window = np.hanning(self.hop).astype(np.float32)
         self._prev_mag: Optional[np.ndarray] = None
-        # 直近 ~1.5 秒のフラックス（適応閾値用）
+        self._sr_env = self.sr / self.hop
+        self._env: collections.deque[float] = collections.deque(
+            maxlen=max(16, int(self._sr_env * config.tempo_window_s))
+        )
+        self._update_frames = max(1, int(self._sr_env * config.tempo_update_s))
+        self._since_update = 0
+        self._bpm: Optional[float] = None
+        self._prefer = config.prefer_bpm
+
+    @property
+    def time(self) -> float:
+        return self._n_samples / self.sr
+
+    @property
+    def current_bpm(self) -> Optional[float]:
+        return self._bpm
+
+    def set_prior(self, bpm: Optional[float]) -> None:
+        if bpm is not None and bpm > 0:
+            self._prefer = float(bpm)
+
+    def process(self, frame: np.ndarray) -> List[float]:
+        frame = _fit_hop(frame, self.hop)
+        self._n_samples += self.hop
+        flux, self._prev_mag = spectral_flux(frame, self._prev_mag, self._window)
+        self._env.append(flux)
+        self._since_update += 1
+        if self._since_update >= self._update_frames:
+            self._since_update = 0
+            bpm = autocorr_tempo(
+                np.fromiter(self._env, dtype=np.float64), self._sr_env,
+                self.cfg.min_bpm, self.cfg.max_bpm, self._prefer, self.cfg.prior_sigma,
+            )
+            if bpm is not None:
+                self._bpm = bpm
+        return []
+
+
+class NumpyBeatDetector(BeatDetector):
+    """スペクトルフラックス + 適応閾値のオンセット検出（ビートイベント型）。"""
+
+    def __init__(self, config: Config):
+        self.cfg = config
+        self.sr = config.samplerate
+        self.hop = config.hop_size
+        self._n_samples = 0
+        self._window = np.hanning(self.hop).astype(np.float32)
+        self._prev_mag: Optional[np.ndarray] = None
         self._frame_rate = self.sr / self.hop
         self._flux_hist: collections.deque[float] = collections.deque(
             maxlen=max(8, int(self._frame_rate * 1.5))
         )
-        self._last_onset_t: float = -1e9
-        self._armed = True  # 立ち上がりエッジ検出用
+        self._last_onset_t = -1e9
+        self._armed = True
 
     @property
     def time(self) -> float:
         return self._n_samples / self.sr
 
     def process(self, frame: np.ndarray) -> List[float]:
-        frame = _to_mono(frame)
-        if len(frame) < self.hop:
-            frame = np.pad(frame, (0, self.hop - len(frame)))
-        elif len(frame) > self.hop:
-            frame = frame[: self.hop]
+        frame = _fit_hop(frame, self.hop)
         self._n_samples += self.hop
-
-        mag = np.abs(np.fft.rfft(frame * self._window))
-        beats: List[float] = []
-        if self._prev_mag is not None:
-            # 半波整流したスペクトル差分の総和（spectral flux）
-            flux = float(np.sum(np.maximum(0.0, mag - self._prev_mag)))
-            beats = self._pick(flux)
-        self._prev_mag = mag
+        flux, self._prev_mag = spectral_flux(frame, self._prev_mag, self._window)
+        beats = self._pick(flux) if self._prev_mag is not None else []
         return beats
 
     def _pick(self, flux: float) -> List[float]:
         beats: List[float] = []
         if len(self._flux_hist) >= 16:
             arr = np.fromiter(self._flux_hist, dtype=np.float64)
-            # 中央値ベースライン（スパイク自身に引っ張られにくい）+ k*std
             threshold = np.median(arr) + self.cfg.onset_sensitivity * arr.std()
             t = self.time
             above = flux > threshold and flux > 0
@@ -85,7 +144,7 @@ class NumpyBeatDetector(BeatDetector):
                 self._last_onset_t = t
                 self._armed = False
             elif not above:
-                self._armed = True  # 一度閾値を下回ってから次の立ち上がりを拾う
+                self._armed = True
         self._flux_hist.append(flux)
         return beats
 
@@ -94,7 +153,7 @@ class AubioBeatDetector(BeatDetector):
     """aubio.tempo ラッパ（aubio が import できる場合のみ）。"""
 
     def __init__(self, config: Config):
-        import aubio  # 遅延 import（無くても numpy 検出は動く）
+        import aubio
 
         self.cfg = config
         self.sr = config.samplerate
@@ -107,23 +166,11 @@ class AubioBeatDetector(BeatDetector):
         return self._n_samples / self.sr
 
     def process(self, frame: np.ndarray) -> List[float]:
-        frame = _to_mono(frame).astype(np.float32)
-        if len(frame) < self.hop:
-            frame = np.pad(frame, (0, self.hop - len(frame)))
-        elif len(frame) > self.hop:
-            frame = frame[: self.hop]
+        frame = _fit_hop(frame, self.hop).astype(np.float32)
         self._n_samples += self.hop
         if self._tempo(frame):
-            # aubio はサンプル基準の最終ビート時刻を返す
             return [float(self._tempo.get_last_s())]
         return []
-
-
-def _to_mono(frame: np.ndarray) -> np.ndarray:
-    frame = np.asarray(frame, dtype=np.float32)
-    if frame.ndim == 2:
-        frame = frame.mean(axis=1)
-    return frame
 
 
 def make_detector(config: Config) -> BeatDetector:
@@ -131,5 +178,8 @@ def make_detector(config: Config) -> BeatDetector:
         try:
             return AubioBeatDetector(config)
         except Exception as exc:  # noqa: BLE001 - フォールバックを明示
-            print(f"[beat_detector] aubio 不可 ({exc}); numpy 検出にフォールバック")
-    return NumpyBeatDetector(config)
+            print(f"[beat_detector] aubio 不可 ({exc}); autocorr 検出にフォールバック")
+            return AutocorrTempoDetector(config)
+    if config.detector == "numpy":
+        return NumpyBeatDetector(config)
+    return AutocorrTempoDetector(config)

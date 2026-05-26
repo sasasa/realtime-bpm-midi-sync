@@ -31,12 +31,14 @@ def _add_common(p: argparse.ArgumentParser) -> None:
                    help="入力デバイス番号（list-devices 参照）")
     p.add_argument("--midi-port", dest="midi_port",
                    help="MIDI 出力ポート名（部分一致。list-midi 参照）")
+    p.add_argument("--expected-bpm", type=float, dest="prefer_bpm",
+                   help="期待テンポ（autocorr のオクターブ prior 中心。概テンポが分かる時に指定）")
 
 
 def _load_config(args) -> Config:
     cfg = Config.load(args.config) if getattr(args, "config", None) else Config()
     for key in ("detector", "estimator", "samplerate", "hop_size",
-                "input_device", "midi_port"):
+                "input_device", "midi_port", "prefer_bpm"):
         val = getattr(args, key, None)
         if val is not None:
             cfg = cfg.replace(**{key: val})

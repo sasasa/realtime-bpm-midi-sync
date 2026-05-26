@@ -31,13 +31,40 @@
       "note": "ドラム主体トラック例。実際のURL/既知BPMを各自記入。ToS考慮しローカル検証限定、可能ならループバック取込（DL不要）"
     },
     {
-      "id": "EXAMPLE-fullmix-steady",
+      "id": "verify-territorial-183",
+      "type": "youtube",
+      "tier": 3,
+      "url": "https://www.youtube.com/watch?v=9yNPgx0swCM",
+      "bpm": 183,
+      "license": "unknown",
+      "note": "Nirvana - Territorial Pissings。歪み密・高速の難ケース。autocorr+expected=183 で~123（未達）。病的例の基準点"
+    },
+    {
+      "id": "verify-180",
       "type": "youtube",
       "tier": 2,
-      "url": "https://www.youtube.com/watch?v=zucJHYwi2Uc",
-      "bpm": null,
+      "url": "https://www.youtube.com/watch?v=HHYYnOabhjQ",
+      "bpm": 180,
       "license": "unknown",
-      "note": "定常ビートのフルミックス例。ロバスト性確認用"
+      "note": "autocorr + --expected-bpm 180 で 180 を正解。blind(120)では90に折り返す"
+    },
+    {
+      "id": "verify-90",
+      "type": "youtube",
+      "tier": 2,
+      "url": "https://www.youtube.com/watch?v=ejdy8v0YlFQ",
+      "bpm": 90,
+      "license": "unknown",
+      "note": "autocorr で 90 を正解（blind/expected とも）"
+    },
+    {
+      "id": "verify-120",
+      "type": "youtube",
+      "tier": 2,
+      "url": "https://www.youtube.com/watch?v=WuR7j2dOa6s",
+      "bpm": 120,
+      "license": "unknown",
+      "note": "autocorr で 120 を正解（blind/expected とも）"
     }
   ]
 }

@@ -34,6 +34,7 @@ class Controller:
         self._detected_bpm: Optional[float] = None
         self._beat_count = 0
         self._last_beat_t: Optional[float] = None
+        self._tempo_count = 0
 
     # ------------------------------------------------------------------ #
     def seed(self, bpm: float) -> None:
@@ -60,6 +61,27 @@ class Controller:
 
         # ロック後は現テンポ ±tol 内の検出のみ採用（octave/誤検出を無視）
         if bpm is not None and self._within_tolerance(bpm):
+            self._detected_bpm = bpm
+
+    def on_tempo(self, t: float, bpm: Optional[float]) -> None:
+        """テンポストリーム型検出器（autocorr）から毎更新の BPM を受ける。
+
+        ビートイベントが無いので、安定した BPM が acquire_beats 回続いたら LOCKED。
+        """
+        if bpm is None:
+            return
+        self._last_beat_t = t
+        if self.state == State.HOLD:
+            self.state = State.LOCKED
+        if self.state == State.IDLE:
+            self.state = State.ACQUIRING
+            self._tempo_count = 0
+        self._tempo_count += 1
+        if self.state == State.ACQUIRING and self._tempo_count >= self.cfg.acquire_beats:
+            self.state = State.LOCKED
+            if self.target_bpm is None:
+                self.target_bpm = bpm
+        if self._within_tolerance(bpm):
             self._detected_bpm = bpm
 
     def tick(self, t: float, dt: float) -> Optional[float]:

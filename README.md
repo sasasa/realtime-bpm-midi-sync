@@ -56,8 +56,9 @@ pip install -e .[dev]             # テスト
 ./.venv/Scripts/python.exe -m bpm_midi_sync run --device 15 --midi-port loopMIDI --seed 120
 
 # ブラウザ等のシステム音声をループバック入力（YouTube 検証。DL 不要）
-./.venv/Scripts/python.exe -m bpm_midi_sync loopback --midi-port loopMIDI
-./.venv/Scripts/python.exe -m bpm_midi_sync loopback --no-midi          # 検出だけ見る
+./.venv/Scripts/python.exe -m bpm_midi_sync loopback --no-midi                      # 検出だけ見る
+# 速い曲/概テンポが分かる時は期待テンポを与えるとオクターブ誤りを防げる（重要）
+./.venv/Scripts/python.exe -m bpm_midi_sync loopback --no-midi --expected-bpm 180
 ```
 
 ## 構成
@@ -65,8 +66,9 @@ pip install -e .[dev]             # テスト
 | モジュール | 役割 |
 |---|---|
 | `bpm_midi_sync/sources/` | 入力ソース抽象（live / file / loopback / array） |
-| `beat_detector.py` | スペクトルフラックスのオンセット検出（numpy）/ aubio ラッパ |
-| `tempo_estimator.py` | テンポ推定 + 平滑化（PLL / 中央値 IBI、octave 補正、スルーレート/IIR/デッドバンド） |
+| `beat_detector.py` | テンポ検出。autocorr(既定)＝オンセット包絡の自己相関＋テンポprior / numpy(onset) / aubio |
+| `tempogram.py` | 自己相関テンポ推定（不偏正規化＋対数正規 prior でオクターブ曖昧性を解消） |
+| `tempo_estimator.py` | （onset/aubio 用）テンポ推定 + 平滑化（PLL / 中央値 IBI、octave 補正、スルーレート/IIR/デッドバンド） |
 | `controller.py` | 状態機械（IDLE/ACQUIRING/LOCKED/HOLD）+ 低ゲイン追従 |
 | `midi_clock.py` | MIDI クロック送出スレッド（累積時刻・スピン待ち・Windows timeBeginPeriod） |
 | `engine.py` | 上記の配線（オーディオでもオフラインでも同一） |
@@ -80,12 +82,21 @@ pip install -e .[dev]
 pytest -q
 ```
 
+## テンポ検出とオクターブ（重要）
+
+実音源での検証で、**テンポのオクターブ誤り（半分/倍）が最大の難所**と判明（高精度な librosa でも prior 無しでは 4 曲中 3 曲を誤る）。本ツールは autocorr 検出＋**テンポ prior**で解決する:
+
+- **概テンポが分かるなら `--expected-bpm`（または `--seed`）を必ず与える** → prior がオクターブを確定。実曲 180/90/120 で正解を確認。
+- prior 無し（既定 120）だと速い曲は半分に折り返す。
+- 検証コーパスの実測値は `bpm_midi_sync/eval/corpus.json` 参照。
+
 ## 既知の制約（v1）
 
-- numpy 検出は**オンセットベース**。複雑な生ドラムでは aubio バックエンド推奨。
-- 出力 BPM には hop 量子化（hop/sr 秒）由来の微小バイアスがあり、デッドバンドで固定される（安定性優先の設計トレードオフ。plan §7）。
+- ブラインド（prior 無し）でのフルミックス・テンポ検出はオクターブ曖昧（上記）。単一ドラムキットはより安定。
+- 極端な高速・歪み系（例: Territorial Pissings 183）は prior を与えても外す場合がある（onset 包絡が飽和するため）。
 - **位相（小節頭）同期は未実装**（テンポ追従のみ。plan の段階 12）。
 - 閉ループ安定性は録音では測れないため `simulate`（模擬ドラマー）で確認する。
+- aubio/numpy(onset) 検出は IBI ベースで密なオンセットに弱い。既定の autocorr 推奨。
 
 ## ハードウェア（plan §2.5）
 
