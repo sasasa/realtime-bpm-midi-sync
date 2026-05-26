@@ -23,3 +23,6 @@ eval_data/
 Thumbs.db
 .vscode/
 .idea/
+
+# ユーザーの個人メモ
+memo.txt
