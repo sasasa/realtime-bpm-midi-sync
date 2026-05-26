@@ -35,12 +35,14 @@ class Controller:
         self._beat_count = 0
         self._last_beat_t: Optional[float] = None
         self._tempo_count = 0
+        self._anchor: Optional[float] = None   # seed(期待値)。target の暴走防止クランプの基準
 
     # ------------------------------------------------------------------ #
     def seed(self, bpm: float) -> None:
         """タップ/手入力で初期テンポを与え、即 LOCKED にする（ACQUIRING の保険）。"""
         self.target_bpm = bpm
         self._detected_bpm = bpm
+        self._anchor = bpm
         self.state = State.LOCKED
 
     def on_beat(self, t: float, bpm: Optional[float]) -> None:
@@ -100,6 +102,13 @@ class Controller:
             elif diff < -max_delta:
                 diff = -max_delta
             self.target_bpm += diff
+
+        # 暴走防止: 期待値 ±target_max_drift_pct に送出 BPM をクランプ
+        if (self._anchor is not None and self.cfg.target_max_drift_pct > 0
+                and self.target_bpm is not None):
+            d = self.cfg.target_max_drift_pct
+            lo, hi = self._anchor * (1 - d), self._anchor * (1 + d)
+            self.target_bpm = max(lo, min(hi, self.target_bpm))
 
         return self.target_bpm
 

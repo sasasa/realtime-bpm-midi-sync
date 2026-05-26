@@ -16,6 +16,8 @@ from __future__ import annotations
 import queue
 import threading
 import warnings
+import wave
+from pathlib import Path
 from typing import Iterator, Optional
 
 import numpy as np
@@ -24,7 +26,8 @@ from .base import AudioSource
 
 
 class LoopbackSource(AudioSource):
-    def __init__(self, samplerate: int, hop_size: int, speaker_name: Optional[str] = None):
+    def __init__(self, samplerate: int, hop_size: int, speaker_name: Optional[str] = None,
+                 record_path: Optional[str] = None):
         try:
             import soundcard as sc
         except ImportError as exc:  # pragma: no cover
@@ -37,6 +40,8 @@ class LoopbackSource(AudioSource):
         self.samplerate = samplerate
         self.hop_size = hop_size
         self.speaker_name = speaker_name
+        self.record_path = record_path
+        self.drops = 0          # 解析が遅れて落としたフレーム数（診断用）
         self._stop = False
 
     def stop(self) -> None:
@@ -55,20 +60,42 @@ class LoopbackSource(AudioSource):
             with warnings.catch_warnings():
                 # 途切れ警告は想定内（解析が一時的に遅れた合図）。ノイズなので抑制
                 warnings.simplefilter("ignore")
+                # 取り込みは大きめブロックで（record 呼び出しのオーバーヘッド/取りこぼし低減）
+                block = max(self.hop_size, 2048)
                 with mic.recorder(samplerate=self.samplerate, channels=1,
-                                  blocksize=self.hop_size) as rec:
+                                  blocksize=block) as rec:
                     while not self._stop:
-                        data = rec.record(numframes=self.hop_size)
-                        frame = data.mean(axis=1) if data.ndim == 2 else data
-                        try:
-                            q.put_nowait(np.asarray(frame, dtype=np.float32))
-                        except queue.Full:
-                            pass  # 解析が遅れている。最新を優先して落とす
+                        data = rec.record(numframes=block)
+                        mono = data.mean(axis=1) if data.ndim == 2 else data
+                        mono = np.asarray(mono, dtype=np.float32)
+                        for i in range(0, len(mono), self.hop_size):
+                            chunk = mono[i:i + self.hop_size]
+                            if len(chunk) < self.hop_size:
+                                break
+                            try:
+                                q.put_nowait(chunk)
+                            except queue.Full:
+                                self.drops += 1  # 解析が遅れている。落とした数を記録
+
+        writer = None
+        if self.record_path:
+            Path(self.record_path).parent.mkdir(parents=True, exist_ok=True)
+            writer = wave.open(str(self.record_path), "wb")
+            writer.setnchannels(1)
+            writer.setsampwidth(2)
+            writer.setframerate(self.samplerate)
 
         th = threading.Thread(target=capture, daemon=True)
         th.start()
-        while not self._stop:
-            try:
-                yield q.get(timeout=0.5)
-            except queue.Empty:
-                continue
+        try:
+            while not self._stop:
+                try:
+                    frame = q.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                if writer is not None:
+                    writer.writeframes((np.clip(frame, -1, 1) * 32767).astype("<i2").tobytes())
+                yield frame
+        finally:
+            if writer is not None:
+                writer.close()

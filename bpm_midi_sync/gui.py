@@ -46,10 +46,13 @@ class EngineRunner:
     """別スレッドで Engine を回し、状態をキューへ流す。expected-bpm を随時切替。"""
 
     def __init__(self, cfg: Config, source_kind: str, midi_port: Optional[str],
-                 status_q: "queue.Queue"):
+                 status_q: "queue.Queue", record_input: bool = False):
         self.cfg = cfg
         self.q = status_q
         self.engine = Engine(cfg)
+        self.input_wav: Optional[Path] = None
+        if record_input:
+            self.input_wav = Path("logs") / f"input_{datetime.now():%Y%m%d_%H%M%S}.wav"
         self._source = self._make_source(source_kind)
         self._midi = None
         self._thread: Optional[threading.Thread] = None
@@ -69,7 +72,8 @@ class EngineRunner:
             return LiveSource(self.cfg.samplerate, self.cfg.hop_size,
                               device=self.cfg.input_device, channels=self.cfg.channels)
         from .sources.loopback import LoopbackSource
-        return LoopbackSource(self.cfg.samplerate, self.cfg.hop_size)
+        return LoopbackSource(self.cfg.samplerate, self.cfg.hop_size,
+                              record_path=str(self.input_wav) if self.input_wav else None)
 
     def set_expected_bpm(self, bpm: float, name: Optional[str] = None) -> None:
         self.expected_bpm = bpm
@@ -133,6 +137,9 @@ class App:
         self.btn = ttk.Button(top, text="開始", command=self._toggle)
         self.btn.grid(row=0, column=2, padx=8)
 
+        self.rec_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(top, text="入力録音(診断)", variable=self.rec_var).grid(row=2, column=1, sticky="w")
+
         # 現在値表示
         mid = ttk.Frame(self.root, padding=8)
         mid.pack(fill="x")
@@ -175,7 +182,8 @@ class App:
     def _start(self) -> None:
         kind = "live" if self.src_var.get().startswith("ライブ") else "loopback"
         try:
-            self.runner = EngineRunner(self.cfg, kind, self.midi_var.get(), self.q)
+            self.runner = EngineRunner(self.cfg, kind, self.midi_var.get(), self.q,
+                                       record_input=self.rec_var.get())
             self.runner.start()
         except Exception as exc:  # noqa: BLE001
             self.state_lbl.config(text=f"起動失敗: {exc}", foreground="red")
@@ -183,7 +191,10 @@ class App:
             return
         self.btn.config(text="停止")
         self.state_lbl.config(text="起動中…", foreground="black")
-        self.log_lbl.config(text=f"ズレログ: {self.runner.log_path}")
+        logtxt = f"ズレログ: {self.runner.log_path}"
+        if self.runner.input_wav:
+            logtxt += f"\n入力録音: {self.runner.input_wav}"
+        self.log_lbl.config(text=logtxt)
         # 既に選択済みの曲があれば prior を適用
         sel = self.listbox.curselection()
         if sel:
@@ -233,10 +244,12 @@ class App:
 
 
 def run_gui(setlist_path: Optional[str], cfg: Config) -> int:
-    # セットリストの BPM は信頼できる期待値なので、検出を ±35% に拘束して
-    # オクターブ跳びを排除（ズレログが本物の減速だけを拾うようにする）
+    # セットリストの BPM は信頼できる期待値。検出を ±25% に拘束（オクターブ＋
+    # 近傍の競合ピーク=例 79 に対する 100 を排除）し、送出は期待値±15% に固定して暴走防止。
     if cfg.tempo_lock_range_pct == 0.0:
-        cfg = cfg.replace(tempo_lock_range_pct=0.35)
+        cfg = cfg.replace(tempo_lock_range_pct=0.25)
+    if cfg.target_max_drift_pct == 0.0:
+        cfg = cfg.replace(target_max_drift_pct=0.15)
     songs = load_setlist(setlist_path)
     root = tk.Tk()
     App(root, songs, cfg)

@@ -44,6 +44,18 @@ def test_low_gain_follow_is_slew_limited():
     assert abs(ctl.target_bpm - 121.0) < 1e-6
 
 
+def test_target_clamped_to_anchor():
+    # 送出 BPM は seed(期待値)±target_max_drift_pct に固定され暴走しない
+    cfg = Config(acquire_beats=1, follow_max_bps=100.0, lock_tolerance=0.9,
+                 target_max_drift_pct=0.15)
+    ctl = Controller(cfg)
+    ctl.seed(80.0)              # anchor=80 → クランプ [68, 92]
+    for i in range(50):        # 検出が 120 に張り付いても…
+        ctl.on_beat(i * 0.5, 120.0)
+        ctl.tick(i * 0.5, 0.5)
+    assert ctl.target_bpm <= 92.0 + 1e-6   # 92 を超えない
+
+
 def test_octave_detection_ignored_after_lock():
     cfg = Config(acquire_beats=1, lock_tolerance=0.25)
     ctl = Controller(cfg)

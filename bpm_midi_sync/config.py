@@ -50,6 +50,7 @@ class Config:
     follow_max_bps: float = 1.0  # 低ゲイン追従の最大スルー（BPM/秒）
     lock_tolerance: float = 0.25 # ロック後、現テンポ ±この割合外の検出は無視（octave 対策）
     silence_timeout_s: float = 2.0  # ビートが途切れたら HOLD に入るまでの秒
+    target_max_drift_pct: float = 0.0  # >0 で送出 BPM を seed(期待値)±この割合に固定（暴走防止）。GUI で 0.15
 
     # --- MIDI（midi_clock） ---
     midi_port: Optional[str] = None  # 出力ポート名（部分一致）。None=最初の出力
