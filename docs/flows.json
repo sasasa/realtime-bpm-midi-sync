@@ -1,0 +1,161 @@
+{
+  "viewBox": { "w": 1500, "h": 900 },
+  "columns": [
+    { "id": "external", "label": "EXTERNAL", "x": 150, "divider": 300 },
+    { "id": "input", "label": "INPUT (sources)", "x": 450, "divider": 610 },
+    { "id": "analyze", "label": "ANALYZE", "x": 770, "divider": 925 },
+    { "id": "control", "label": "ENGINE / CONTROL", "x": 1080, "divider": 1225 },
+    { "id": "output", "label": "OUTPUT / UI", "x": 1365, "divider": 1500 }
+  ],
+  "groups": [
+    { "id": "external", "label": "外部", "stroke": "#4cc9f0", "fill": "#11242e", "sub": "#7fd6f0" },
+    { "id": "input", "label": "入力ソース", "stroke": "#80ed99", "fill": "#122a1e", "sub": "#a6f0b6" },
+    { "id": "analyze", "label": "検出/推定", "stroke": "#ffd166", "fill": "#2a2410", "sub": "#ffe199" },
+    { "id": "control", "label": "エンジン/制御", "stroke": "#c77dff", "fill": "#211a2e", "sub": "#d9a8ff" },
+    { "id": "output", "label": "出力/UI", "stroke": "#ff8fa3", "fill": "#2a1620", "sub": "#ffb3c0" }
+  ],
+  "nodes": [
+    { "id": "sysaudio", "title": "システム音声 / YouTube", "subtitle": "ループバック対象", "group": "external", "x": 45, "y": 130, "w": 210, "h": 54 },
+    { "id": "mic", "title": "マイク / 生ドラム", "subtitle": "UAC-232 入力", "group": "external", "x": 45, "y": 300, "w": 210, "h": 54 },
+    { "id": "audiofile", "title": "音源ファイル (WAV)", "subtitle": "yt-dlp / logs/input_*.wav", "group": "external", "x": 45, "y": 470, "w": 210, "h": 54 },
+    { "id": "midiout", "title": "MIDI出力", "subtitle": "loopMIDI / RC-600 (0xF8)", "group": "external", "x": 45, "y": 700, "w": 210, "h": 54 },
+
+    { "id": "loopback", "title": "LoopbackSource", "subtitle": "soundcard WASAPI loopback", "group": "input", "x": 345, "y": 150, "w": 210, "h": 54 },
+    { "id": "live", "title": "LiveSource", "subtitle": "sounddevice callback", "group": "input", "x": 345, "y": 330, "w": 210, "h": 54 },
+    { "id": "filesrc", "title": "FileSource / ArraySource", "subtitle": "WAV/配列 → hop", "group": "input", "x": 345, "y": 560, "w": 210, "h": 54 },
+
+    { "id": "detector", "title": "AutocorrTempoDetector", "subtitle": "beat_detector.py", "group": "analyze", "x": 665, "y": 180, "w": 210, "h": 54 },
+    { "id": "tempogram", "title": "autocorr_tempo", "subtitle": "tempogram.py (自己相関+prior)", "group": "analyze", "x": 665, "y": 380, "w": 210, "h": 54 },
+    { "id": "estimator", "title": "TempoEstimator", "subtitle": "PLL/中央値 (onset/sim用)", "group": "analyze", "x": 665, "y": 580, "w": 210, "h": 54 },
+
+    { "id": "engine", "title": "Engine.run", "subtitle": "engine.py (配線)", "group": "control", "x": 975, "y": 150, "w": 210, "h": 54 },
+    { "id": "controller", "title": "Controller", "subtitle": "状態機械+低ゲイン追従+クランプ", "group": "control", "x": 975, "y": 360, "w": 210, "h": 54 },
+    { "id": "config", "title": "Config", "subtitle": "for_trusted_expected()", "group": "control", "x": 975, "y": 580, "w": 210, "h": 54 },
+
+    { "id": "midiclock", "title": "MidiClock", "subtitle": "累積時刻 + スピン待ち", "group": "output", "x": 1260, "y": 110, "w": 210, "h": 54 },
+    { "id": "gui", "title": "GUI / EngineRunner", "subtitle": "gui.py (セットリスト)", "group": "output", "x": 1260, "y": 290, "w": 210, "h": 54 },
+    { "id": "devlog", "title": "DeviationLogger", "subtitle": "metrics.py → CSV", "group": "output", "x": 1260, "y": 450, "w": 210, "h": 54 },
+    { "id": "metrics", "title": "MetricsLog", "subtitle": "整定/誤差/ジッタ", "group": "output", "x": 1260, "y": 600, "w": 210, "h": 54 },
+    { "id": "eval", "title": "eval (batch/sweep/sim)", "subtitle": "合成・評価・閉ループ模擬", "group": "output", "x": 1260, "y": 760, "w": 210, "h": 54 }
+  ],
+  "flows": [
+    {
+      "id": "loopback-sync", "icon": "🎧", "name": "1. ループバック → MIDI同期", "sub": "GUI主経路",
+      "description": "ブラウザ等のシステム音声を WASAPI loopback で取り込み、テンポを検出して MIDIクロックを送出する（GUIの中心動作）。",
+      "steps": [
+        { "from": "sysaudio", "to": "loopback", "passes": "システム音声 (48kHz mono)", "note": "soundcardで既定スピーカーをloopback録音、hop毎にキャプチャ" },
+        { "from": "loopback", "to": "engine", "passes": "hopフレーム (float32, len=512)", "note": "キャプチャは専用スレッド→キュー、frames()で取り出し" },
+        { "from": "engine", "to": "detector", "passes": "detector.process(frame)", "note": "毎フレーム" },
+        { "from": "detector", "to": "engine", "passes": "current_bpm", "note": "テンポ(BPM)ストリームを返す" },
+        { "from": "engine", "to": "controller", "passes": "on_tempo(t, bpm) / tick(t, dt)", "note": "状態遷移+低ゲイン追従→target_bpm" },
+        { "from": "controller", "to": "midiclock", "passes": "set_bpm(target_bpm)", "note": "送出BPMを更新(共有変数)" },
+        { "from": "midiclock", "to": "midiout", "passes": "Message('clock') 0xF8 ×24/拍", "note": "interval=60/(bpm*24)、累積時刻で送出" }
+      ]
+    },
+    {
+      "id": "live-drums", "icon": "🥁", "name": "2. 生ドラム入力 (run)", "sub": "マイク→ルーパー",
+      "description": "マイク(UAC-232)から入る生ドラムをリアルタイム検出し、ルーパーへMIDIクロックを送って追従させる本来の用途。",
+      "steps": [
+        { "from": "mic", "to": "live", "passes": "PortAudioコールバック (indata)", "note": "コピーしてキューへ。重い処理は置かない" },
+        { "from": "live", "to": "engine", "passes": "hopフレーム (再バッファ)", "note": "blocksize→hop単位に整形して供給" },
+        { "from": "engine", "to": "detector", "passes": "process(frame) → current_bpm", "note": "オンセット強度+自己相関テンポ" },
+        { "from": "controller", "to": "midiclock", "passes": "set_bpm(target)", "note": "ドラマーのテンポへゆっくり追従" },
+        { "from": "midiclock", "to": "midiout", "passes": "0xF8 @24PPQN", "note": "RC-600へ" }
+      ]
+    },
+    {
+      "id": "tempo-estimate", "icon": "🔍", "name": "3. テンポ推定 (autocorr+prior)", "sub": "オクターブ解消",
+      "description": "オンセット強度包絡の不偏正規化自己相関に対数正規priorを掛け、半分/倍テンポの曖昧さを解消してBPMを出す中核。",
+      "steps": [
+        { "from": "detector", "to": "tempogram", "passes": "onset強度包絡 (直近 tempo_window_s)", "note": "spectral_fluxをdequeに蓄積、tempo_update_s毎に推定" },
+        { "from": "tempogram", "to": "detector", "passes": "BPM (best候補)", "note": "ac[k]/(N-k) × 対数正規prior。prefer±lock_rangeに探索拘束" }
+      ]
+    },
+    {
+      "id": "trusted-profile", "icon": "🎯", "name": "4. 信頼プロファイル", "sub": "強prior+クランプ",
+      "description": "期待BPMが信頼できる時(セットリスト/--expected-bpm)に、強prior・長窓・範囲拘束・送出クランプを適用してオクターブ誤りと暴走を防ぐ。",
+      "steps": [
+        { "from": "config", "to": "detector", "passes": "prior_sigma=0.35 / window=14s / lock=±25%", "note": "Config.for_trusted_expected()" },
+        { "from": "config", "to": "controller", "passes": "target_max_drift_pct=0.15", "note": "送出BPMを期待値±15%にクランプ" },
+        { "from": "gui", "to": "controller", "passes": "seed(expected) → anchor", "note": "曲選択でテンポ確定・即LOCKED" },
+        { "from": "gui", "to": "detector", "passes": "set_prior(expected)", "note": "オクターブの中心を期待値に固定" }
+      ]
+    },
+    {
+      "id": "deviation-log", "icon": "📉", "name": "5. ズレログ記録", "sub": "減速を後で分析",
+      "description": "検出が期待BPMから閾値超ズレた状態が一定時間続いたらCSVに記録。曲調チェンジの減速等を後から分析する。",
+      "steps": [
+        { "from": "engine", "to": "gui", "passes": "status_cb(t, detected, target, state)", "note": "毎フレーム" },
+        { "from": "gui", "to": "devlog", "passes": "record(t, detected, target, song, expected)", "note": "EngineRunner._status経由" },
+        { "from": "devlog", "to": "gui", "passes": "deviating(bool)", "note": "warmup8s後・3s継続・>8%で logs/deviation_*.csv に記録、⚠表示" }
+      ]
+    },
+    {
+      "id": "record-diag", "icon": "💾", "name": "6. 入力録音 → 再解析", "sub": "ライブ経路の検証",
+      "description": "検出器が実際に食べた音をWAVに保存し、オフラインで再解析。ライブと一致(drops=0)を確認して原因を切り分ける診断機能。",
+      "steps": [
+        { "from": "loopback", "to": "audiofile", "passes": "yield毎にwave書き出し", "note": "logs/input_*.wav (検出器入力そのもの)" },
+        { "from": "audiofile", "to": "filesrc", "passes": "soundfileで読み込み", "note": "オフライン再解析" },
+        { "from": "filesrc", "to": "engine", "passes": "hopフレーム", "note": "ライブ検出と一致するか検証" }
+      ]
+    },
+    {
+      "id": "silence-hold", "icon": "🔇", "name": "7. 無音 → HOLD", "sub": "ルーパー停止防止",
+      "description": "ビートが途切れたらHOLD状態に入り、最後のテンポでクロックを送り続ける(Stopは送らない=ルーパーを止めない)。",
+      "steps": [
+        { "from": "engine", "to": "controller", "passes": "tick(t): t - last_beat > timeout", "note": "無音判定で LOCKED→HOLD" },
+        { "from": "controller", "to": "midiclock", "passes": "set_bpm(最後のtarget維持)", "note": "Stop(0xFC)は送らない" },
+        { "from": "midiclock", "to": "midiout", "passes": "0xF8 継続", "note": "ルーパーは回り続ける" }
+      ]
+    },
+    {
+      "id": "batch-eval", "icon": "📊", "name": "8. バッチ評価 (selftest)", "sub": "合成クリックで検証",
+      "description": "既知BPMの合成クリックを高速処理し、追従誤差・整定時間・定常ジッタを算出する(実機不要・CI向け)。",
+      "steps": [
+        { "from": "eval", "to": "filesrc", "passes": "click_track(bpm) → ArraySource", "note": "eval.synth で生成" },
+        { "from": "filesrc", "to": "engine", "passes": "hopフレーム (faster-than-RT)", "note": "MIDIは載せない" },
+        { "from": "engine", "to": "metrics", "passes": "log(t, detected, target, state)", "note": "MetricsLogへ毎フレーム記録" },
+        { "from": "metrics", "to": "eval", "passes": "tracking_error / jitter / settling_time", "note": "EvalResult を返す" }
+      ]
+    },
+    {
+      "id": "param-sweep", "icon": "🧪", "name": "9. パラメータ探索 (sweep)", "sub": "自動チューニング",
+      "description": "推定/平滑のパラメータを総当たりし、ジッタ↓・誤差↓・整定↓の多目的スコアで最良を選ぶ(=「学習」)。",
+      "steps": [
+        { "from": "eval", "to": "engine", "passes": "各パラメータ組でEngine実行", "note": "param_sweep.grid_search" },
+        { "from": "engine", "to": "metrics", "passes": "log(...)", "note": "ケース毎に計測" },
+        { "from": "metrics", "to": "eval", "passes": "score(多目的)", "note": "最良overridesを返す" }
+      ]
+    },
+    {
+      "id": "sim-closed-loop", "icon": "🌀", "name": "10. 閉ループ安定性シミュ", "sub": "模擬ドラマー",
+      "description": "録音では測れない閉ループ安定性を、ルーパー出力に反応する模擬ドラマーで検証。発散せず収束するかをスイープ。",
+      "steps": [
+        { "from": "eval", "to": "estimator", "passes": "拍時刻 on_beat(t)", "note": "sim_drummer.simulate_closed_loop" },
+        { "from": "estimator", "to": "controller", "passes": "BPM → on_beat", "note": "検出採用・状態遷移" },
+        { "from": "controller", "to": "eval", "passes": "target_bpm (遅延τで聴取)", "note": "ドラマーがゲインgで引き込まれる" },
+        { "from": "eval", "to": "estimator", "passes": "次の拍時刻", "note": "発散/収束を判定、安定限界をスイープ" }
+      ]
+    },
+    {
+      "id": "gui-setlist", "icon": "🖥️", "name": "11. GUI操作 (セットリスト)", "sub": "曲選択で切替",
+      "description": "セットリストの曲をクリックすると期待BPMが切り替わり、その曲のテンポで再ロック。状態と検出/送出BPMを4Hzで表示。",
+      "steps": [
+        { "from": "gui", "to": "engine", "passes": "開始: run(source, status_cb)", "note": "EngineRunnerが別スレッドで実行" },
+        { "from": "gui", "to": "controller", "passes": "曲選択 set_expected_bpm → seed", "note": "anchor=期待値" },
+        { "from": "gui", "to": "detector", "passes": "set_prior(expected)", "note": "オクターブ中心切替" },
+        { "from": "engine", "to": "gui", "passes": "status → Queue → _poll", "note": "BPM/状態ラベルを更新(after 100ms)" }
+      ]
+    },
+    {
+      "id": "cli-file", "icon": "📁", "name": "12. CLIファイル検出 (file)", "sub": "音源を解析",
+      "description": "音源ファイル(WAV/yt-dlp取得)を検出し、--midi指定時は実時間でMIDIクロックも送出するCLI経路。",
+      "steps": [
+        { "from": "audiofile", "to": "filesrc", "passes": "WAV/yt-dlp音源", "note": "soundfile読込+簡易リサンプル" },
+        { "from": "filesrc", "to": "engine", "passes": "hopフレーム (realtime or 高速)", "note": "cmd_file" },
+        { "from": "controller", "to": "midiclock", "passes": "set_bpm (--midi時)", "note": "attach_midiで接続" },
+        { "from": "midiclock", "to": "midiout", "passes": "0xF8", "note": "実ポートへ送出" }
+      ]
+    }
+  ]
+}
